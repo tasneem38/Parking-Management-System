@@ -1,0 +1,153 @@
+#!/bin/bash
+
+PARKING_FILE="parking_system.txt"
+TOTAL_LANES=2
+SLOTS_PER_LANE=2
+TOTAL_SLOTS=$((TOTAL_LANES * SLOTS_PER_LANE))
+
+# Ensure the parking file exists and is empty initially
+if [ ! -f "$PARKING_FILE" ]; then
+  touch "$PARKING_FILE"
+fi
+
+# Initialize parking system with available slots if the file is empty
+initialize_parking() {
+  if [ ! -s "$PARKING_FILE" ]; then
+    for lane in $(seq 1 $TOTAL_LANES); do
+      for slot in $(seq 1 $SLOTS_PER_LANE); do
+        echo "$lane,$slot,Available" >> "$PARKING_FILE"
+      done
+    done
+  fi
+}
+
+# Function to display the menu
+show_menu() {
+  echo "---------------------------------"
+  echo "2-Wheeler Vehicle Management System"
+  echo "---------------------------------"
+  echo "1. Park a Vehicle"
+  echo "2. List All Vehicles in Parking"
+  echo "3. Search for a Vehicle"
+  echo "4. Remove a Vehicle from Parking"
+  echo "5. View Available Parking Slots"
+  echo "6. Exit"
+  echo "---------------------------------"
+}
+
+# Function to park a vehicle
+park_vehicle() {
+  echo "Enter vehicle registration number:"
+  read -r reg_no
+  echo "Enter vehicle brand (e.g., Honda, Yamaha, etc.):"
+  read -r brand
+  echo "Enter vehicle model (e.g., CBR, R15, etc.):"
+  read -r model
+  echo "Enter vehicle color (e.g., Red, Blue, Black):"
+  read -r color
+
+  # Find the first available parking slot
+  available_slot=$(awk -F, '$3 == "Available" {print $1 "," $2; exit}' "$PARKING_FILE")
+
+  if [ -z "$available_slot" ]; then
+    echo "No available parking slots."
+    return
+  fi
+
+  # Get the lane and slot from the available parking slot
+  lane=$(echo "$available_slot" | cut -d',' -f1)
+  slot=$(echo "$available_slot" | cut -d',' -f2)
+
+  # Update the parking status to "Parked" for the selected lane and slot
+  sed -i "/^$lane,$slot,Available$/s/Available/Parked/" "$PARKING_FILE"
+
+  # Store vehicle details along with the parking lane and slot
+  echo "$reg_no,$brand,$model,$color,$lane,$slot,Parked" >> "$PARKING_FILE"
+
+  echo "Vehicle parked successfully in lane $lane, slot $slot."
+}
+
+# Function to list all parked vehicles
+list_vehicles() {
+  if [ -s "$PARKING_FILE" ]; then
+    echo "Listing all parked vehicles:"
+    echo "---------------------------------"
+    awk -F, '$7 == "Parked" {print "Registration: "$1" | Brand: "$2" | Model: "$3" | Color: "$4" | Lane: "$5" | Slot: "$6}' "$PARKING_FILE"
+    echo "---------------------------------"
+  else
+    echo "No vehicles are currently parked!"
+  fi
+}
+
+# Function to search for a vehicle
+search_vehicle() {
+  echo "Enter registration number to search:"
+  read -r search_reg_no
+
+  awk -F, -v reg_no="$search_reg_no" '
+    BEGIN { found=0 }
+    $1 == reg_no && $7 == "Parked" {
+      print "Vehicle Found:"
+      print "Registration: "$1" | Brand: "$2" | Model: "$3" | Color: "$4" | Lane: "$5" | Slot: "$6" | Status: "$7
+      found=1
+    }
+    END {
+      if (found == 0) {
+        print "No vehicle found with registration number " reg_no
+      }
+    }
+  ' "$PARKING_FILE"
+}
+
+# Function to remove a vehicle from parking
+remove_vehicle() {
+  echo "Enter vehicle registration number to remove from parking:"
+  read -r reg_no
+
+  # Search for the vehicle and remove it
+  vehicle_found=$(awk -F, -v reg_no="$reg_no" '$1 == reg_no && $7 == "Parked" {print $5 "," $6; exit}' "$PARKING_FILE")
+  
+  if [ -z "$vehicle_found" ]; then
+    echo "No parked vehicle found with registration number $reg_no."
+    return
+  fi
+
+  # Get lane and slot from the search result
+  lane=$(echo "$vehicle_found" | cut -d',' -f1)
+  slot=$(echo "$vehicle_found" | cut -d',' -f2)
+
+  # Remove the vehicle and make the slot available again
+  sed -i "/^$reg_no,/d" "$PARKING_FILE"
+  sed -i "/^$lane,$slot,Parked$/s/Parked/Available/" "$PARKING_FILE"
+
+  echo "Vehicle $reg_no removed from parking and slot $lane-$slot is now available."
+}
+
+# Function to view available parking slots
+view_available_slots() {
+  available_slots=$(awk -F, '$3 == "Available" {print "Lane: "$1" | Slot: "$2}' "$PARKING_FILE")
+
+  if [ -z "$available_slots" ]; then
+    echo "No available parking slots."
+  else
+    echo "Available parking slots:"
+    echo "$available_slots"
+  fi
+}
+
+# Main program loop
+initialize_parking  # Initialize parking slots if necessary
+while true; do
+  show_menu
+  echo "Enter your choice:"
+  read -r choice
+  case $choice in
+    1) park_vehicle ;;
+    2) list_vehicles ;;
+    3) search_vehicle ;;
+    4) remove_vehicle ;;
+    5) view_available_slots ;;
+    6) echo "Exiting program. Goodbye!"; exit 0 ;;
+    *) echo "Invalid choice. Please try again." ;;
+  esac
+done
